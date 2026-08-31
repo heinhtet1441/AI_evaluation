@@ -15,9 +15,9 @@ API_URL = os.environ.get("API_BASE_URL", "https://ai-evaluation-8ju7.onrender.co
 st.set_page_config(page_title="AI Lab Admin Portal", layout="wide")
 st.title("⚡ AI Lab Admin Portal — Model Retraining & Research Ingestion")
 
-# Header & Health Check
+# Header & Health Check (Increased timeout for Render cold start tolerance)
 try:
-    health = requests.get(f"{API_URL}/health", timeout=5).json()
+    health = requests.get(f"{API_URL}/health", timeout=15).json()
     model_version = health.get("model_version", "N/A")
     st.sidebar.success(f"Connected to API Core\nVersion: {model_version}")
 except Exception:
@@ -37,7 +37,7 @@ with tab_train_brain:
     st.subheader("Train Brain on Research Docs, Open-Source Datasets & Feedback")
 
     try:
-        resp = requests.get(f"{API_URL}/feedback-count", timeout=5)
+        resp = requests.get(f"{API_URL}/feedback-count", timeout=15)
         if resp.status_code == 200:
             fb_count = resp.json().get("count", 0)
             st.info(f"Total Training Samples in DB: **{fb_count}** (At least 20 samples required to retrain)")
@@ -145,7 +145,7 @@ with tab_train_brain:
 # ---------------------------------------------------------------------------
 with tab_metrics:
     try:
-        resp = requests.get(f"{API_URL}/metrics", timeout=5)
+        resp = requests.get(f"{API_URL}/metrics", timeout=15)
         if resp.status_code == 200:
             metrics = resp.json()
             c1, c2, c3, c4 = st.columns(4)
@@ -160,7 +160,7 @@ with tab_metrics:
 
 with tab_predict:
     try:
-        resp = requests.get(f"{API_URL}/model-info", timeout=5)
+        resp = requests.get(f"{API_URL}/model-info", timeout=15)
         if resp.status_code == 200:
             info = resp.json()
             st.write("Feature Names Expected:", info.get("feature_names", "N/A (NLP Vectorizer Used)"))

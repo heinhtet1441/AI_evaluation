@@ -6,8 +6,8 @@ import plotly.express as px
 import streamlit as st
 from openai import OpenAI
 
-# 1. Cloud & Local dynamic configuration (Render dynamic URL support)
-API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+# 1. Cloud & Local dynamic configuration (Valid HTTPS URL fallback)
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://ai-evaluation-8ju7.onrender.com").rstrip("/")
 NGROK_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "https://dexterous-nanny-amniotic.ngrok-free.dev/v1")
 
 # Ensure /v1 path exists for OpenAI client format
@@ -499,7 +499,7 @@ def score_tier(overall: float):
 
 
 try:
-    health_resp = requests.get(f"{API_BASE_URL}/health", timeout=3)
+    health_resp = requests.get(f"{API_BASE_URL}/health", timeout=15)
     api_online = health_resp.status_code == 200
     model_ver = health_resp.json().get("model_version", "Active") if api_online else "Offline"
 except Exception:
