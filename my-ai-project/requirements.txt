@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+requests
+pandas
+numpy
+scikit-learn
+joblib
+pydantic
+pillow
+pdf2image
+pytesseract
+plotly
+streamlit
+openai
+beautifulsoup4
