@@ -1,18 +1,26 @@
-import streamlit as st
+import json
+import os
 import requests
 import pandas as pd
-import json
 import plotly.express as px
+import streamlit as st
 from openai import OpenAI
 
-API_BASE_URL = "http://localhost:8000"
+# 1. Cloud & Local dynamic configuration (Render dynamic URL support)
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:8000")
+NGROK_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "https://dexterous-nanny-amniotic.ngrok-free.dev/v1")
 
-# PythonAnywhere / Ngrok Tunnel Configuration
-NGROK_OLLAMA_URL = "https://dexterous-nanny-amniotic.ngrok-free.dev/v1"
+# Ensure /v1 path exists for OpenAI client format
+if not NGROK_OLLAMA_URL.endswith("/v1"):
+    OLLAMA_OPENAI_URL = f"{NGROK_OLLAMA_URL.rstrip('/')}/v1"
+else:
+    OLLAMA_OPENAI_URL = NGROK_OLLAMA_URL
 
+# OpenAI Client for Ollama
 ollama_client = OpenAI(
-    base_url=NGROK_OLLAMA_URL,
-    api_key="ollama"
+    base_url=OLLAMA_OPENAI_URL,
+    api_key="ollama",
+    default_headers={"Bypass-Tunnel-Remainder": "true"}  # LocalTunnel support
 )
 
 # Configure Page Layout
@@ -491,7 +499,7 @@ def score_tier(overall: float):
 
 
 try:
-    health_resp = requests.get(f"{API_BASE_URL}/health", timeout=2)
+    health_resp = requests.get(f"{API_BASE_URL}/health", timeout=3)
     api_online = health_resp.status_code == 200
     model_ver = health_resp.json().get("model_version", "Active") if api_online else "Offline"
 except Exception:
@@ -600,13 +608,14 @@ elif st.session_state["active_nav"] == "Evaluate":
             st.session_state.pop("chat_history", None)
             with st.spinner("Analyzing proposal across dimensions..."):
                 try:
+                    headers = {"Bypass-Tunnel-Remainder": "true"}
                     if file_payload:
                         files = {"file": (file_payload.name, file_payload.getvalue(), file_payload.type)}
                         data = {"use_llm": str(use_llm).lower(), "org_context": org_context}
-                        res = requests.post(f"{API_BASE_URL}/score-idea", files=files, data=data, timeout=45)
+                        res = requests.post(f"{API_BASE_URL}/score-idea", files=files, data=data, headers=headers, timeout=60)
                     else:
                         payload = {"text": idea_text_payload, "use_llm": str(use_llm).lower(), "org_context": org_context}
-                        res = requests.post(f"{API_BASE_URL}/score-idea", data=payload, timeout=45)
+                        res = requests.post(f"{API_BASE_URL}/score-idea", data=payload, headers=headers, timeout=60)
 
                     if res.status_code == 200:
                         st.session_state["result"] = res.json()
@@ -725,18 +734,21 @@ elif st.session_state["active_nav"] == "Compare":
             for cand in candidates_payload:
                 try:
                     res = None
+                    headers = {"Bypass-Tunnel-Remainder": "true"}
                     if cand["file"]:
                         files = {"file": (cand["file"].name, cand["file"].getvalue(), cand["file"].type)}
                         res = requests.post(
                             f"{API_BASE_URL}/score-idea", files=files,
                             data={"use_llm": str(use_llm_comp).lower(), "org_context": comp_org_context},
-                            timeout=45,
+                            headers=headers,
+                            timeout=60,
                         )
                     elif cand["text"] and cand["text"].strip():
                         res = requests.post(
                             f"{API_BASE_URL}/score-idea",
                             data={"text": cand["text"], "use_llm": str(use_llm_comp).lower(), "org_context": comp_org_context},
-                            timeout=45,
+                            headers=headers,
+                            timeout=60,
                         )
 
                     if res is None:
@@ -841,7 +853,7 @@ elif st.session_state["active_nav"] == "Advisor":
 
         if user_query:
             st.session_state["chat_history"].append({"role": "user", "content": user_query})
-            with st.spinner("Analyzing active context via Local Ollama (Ngrok)..."):
+            with st.spinner("Analyzing active context via Ollama..."):
                 try:
                     joined_active_context = "\n\n====================\n\n".join(active_proposals)
                     prompt = f"""You are an expert enterprise innovation and technical proposal consultant.
@@ -858,7 +870,7 @@ ACTIVE PROPOSAL TEXT & METRICS:
 User Question: {user_query}"""
 
                     res = ollama_client.chat.completions.create(
-                        model="llama3.1",
+                        model="llama3",
                         messages=[
                             {"role": "system", "content": "You are a professional proposal advisor."},
                             {"role": "user", "content": prompt}
@@ -870,8 +882,8 @@ User Question: {user_query}"""
                 except Exception as e:
                     bot_reply = f"Error during query processing: {e}"
 
-                st.session_state["chat_history"].append({"role": "assistant", "content": bot_reply})
-                st.rerun()
+            st.session_state["chat_history"].append({"role": "assistant", "content": bot_reply})
+            st.rerun()
 
 # ===========================================================================
 # STICKY BOTTOM NAVIGATION BAR
