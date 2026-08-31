@@ -10,7 +10,7 @@ import requests
 import streamlit as st
 
 # Cloud Deployment & Local Dynamic API URL Configuration
-API_URL = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+API_URL = os.environ.get("API_BASE_URL", "https://ai-evaluation-8ju7.onrender.com").rstrip("/")
 
 st.set_page_config(page_title="AI Lab Admin Portal", layout="wide")
 st.title("⚡ AI Lab Admin Portal — Model Retraining & Research Ingestion")
