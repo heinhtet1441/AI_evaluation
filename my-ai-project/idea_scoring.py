@@ -59,7 +59,7 @@ def _extract_docx(file_bytes: bytes) -> str:
     return "\n".join(p.text for p in doc.paragraphs)
 
 def _extract_url(url: str) -> str:
-    resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+    resp = requests.get(url, timeout=10, headers={"User-Agent": "FastAPI-Backend-Engine/1.0"})
     resp.raise_for_status()
     soup = BeautifulSoup(resp.text, "html.parser")
     for tag in soup(["script", "style", "nav", "footer", "header"]):
@@ -171,12 +171,12 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
     prompt = _build_rubric_prompt(idea_text, org_context)
     base_url = (ollama_base_url or _get_ollama_base_url()).rstrip("/")
     
-    # Headers to bypass LocalTunnel and Ngrok warning pages (Fixes 403 Forbidden)
+    # Non-standard User-Agent & Bypass headers to bypass LocalTunnel/Ngrok 403 pages
     headers = {
-        "Bypass-Tunnel-Remainder": "true",
         "bypass-tunnel-reminder": "true",
+        "Bypass-Tunnel-Remainder": "true",
         "Ngrok-Skip-Browser-Warning": "true",
-        "User-Agent": "Mozilla/5.0",
+        "User-Agent": "FastAPI-Backend-Engine/1.0",
         "Content-Type": "application/json"
     }
 
@@ -224,7 +224,7 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
                     rubric[key] = {"score": 7.0, "justification": "Evaluated neutrally by Local Ollama Engine."}
             return rubric
         else:
-            fallback_msg = f"Error code: {resp.status_code}"
+            fallback_msg = f"API returned status code {resp.status_code}"
     except Exception as e:
         fallback_msg = str(e)
 
