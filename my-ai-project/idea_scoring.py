@@ -169,9 +169,12 @@ Idea Text:
 
 def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3", org_context: str = None, ollama_base_url: str = None) -> dict:
     prompt = _build_rubric_prompt(idea_text, org_context)
-    base_url = (ollama_base_url or _get_ollama_base_url()).rstrip("/")
     
-    # Non-standard User-Agent & Bypass headers to bypass LocalTunnel/Ngrok 403 pages
+    # Strip any trailing slashes and /v1 prefixes to prevent double /v1 path issues (Fixes 404 Error)
+    clean_base_url = (ollama_base_url or _get_ollama_base_url()).rstrip("/")
+    if clean_base_url.endswith("/v1"):
+        clean_base_url = clean_base_url[:-3].rstrip("/")
+
     headers = {
         "bypass-tunnel-reminder": "true",
         "Bypass-Tunnel-Remainder": "true",
@@ -181,7 +184,7 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
     }
 
     # Attempt 1: Native Ollama /api/generate endpoint
-    native_endpoint = f"{base_url.replace('/v1', '')}/api/generate"
+    native_endpoint = f"{clean_base_url}/api/generate"
     native_payload = {
         "model": model,
         "prompt": prompt,
@@ -202,7 +205,7 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
         pass
 
     # Attempt 2: OpenAI-compatible /v1/chat/completions endpoint
-    chat_endpoint = f"{base_url if base_url.endswith('/v1') else base_url + '/v1'}/chat/completions"
+    chat_endpoint = f"{clean_base_url}/v1/chat/completions"
     chat_payload = {
         "model": model,
         "messages": [
