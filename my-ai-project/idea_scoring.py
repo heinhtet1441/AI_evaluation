@@ -16,8 +16,6 @@ IDEA_MODEL_ROOT = "idea_model_artifacts"
 # Dynamic Base URL resolution
 def _get_ollama_base_url() -> str:
     url = os.environ.get("OLLAMA_BASE_URL", "https://dexterous-nanny-amniotic.ngrok-free.dev").rstrip("/")
-    if url.endswith("/v1"):
-        url = url[:-3]
     return url
 
 def clean_and_normalize_text(raw_text: str) -> str:
@@ -172,17 +170,19 @@ Idea Text:
 def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3", org_context: str = None, ollama_base_url: str = None) -> dict:
     prompt = _build_rubric_prompt(idea_text, org_context)
     base_url = (ollama_base_url or _get_ollama_base_url()).rstrip("/")
-    endpoint = f"{base_url}/api/generate"
-
-    # Headers to bypass LocalTunnel and Ngrok warning pages (Fixes 403 Forbidden Error)
+    
+    # Headers to bypass LocalTunnel and Ngrok warning pages (Fixes 403 Forbidden)
     headers = {
         "Bypass-Tunnel-Remainder": "true",
+        "bypass-tunnel-reminder": "true",
         "Ngrok-Skip-Browser-Warning": "true",
         "User-Agent": "Mozilla/5.0",
         "Content-Type": "application/json"
     }
 
-    payload = {
+    # Attempt 1: Native Ollama /api/generate endpoint
+    native_endpoint = f"{base_url.replace('/v1', '')}/api/generate"
+    native_payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
@@ -190,7 +190,7 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
     }
 
     try:
-        resp = requests.post(endpoint, json=payload, headers=headers, timeout=60)
+        resp = requests.post(native_endpoint, json=native_payload, headers=headers, timeout=60)
         if resp.status_code == 200:
             raw_response = resp.json().get("response", "{}")
             rubric = json.loads(raw_response)
@@ -198,8 +198,33 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
                 if key not in rubric or not isinstance(rubric[key], dict) or "score" not in rubric[key]:
                     rubric[key] = {"score": 7.0, "justification": "Evaluated neutrally by Local Ollama Engine."}
             return rubric
+    except Exception:
+        pass
+
+    # Attempt 2: OpenAI-compatible /v1/chat/completions endpoint
+    chat_endpoint = f"{base_url if base_url.endswith('/v1') else base_url + '/v1'}/chat/completions"
+    chat_payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": "You are an AI evaluation engine. Output strictly valid JSON."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.0,
+        "response_format": {"type": "json_object"}
+    }
+
+    try:
+        resp = requests.post(chat_endpoint, json=chat_payload, headers=headers, timeout=60)
+        if resp.status_code == 200:
+            res_data = resp.json()
+            raw_response = res_data["choices"][0]["message"]["content"]
+            rubric = json.loads(raw_response)
+            for key in PILLAR_KEYS:
+                if key not in rubric or not isinstance(rubric[key], dict) or "score" not in rubric[key]:
+                    rubric[key] = {"score": 7.0, "justification": "Evaluated neutrally by Local Ollama Engine."}
+            return rubric
         else:
-            fallback_msg = f"API returned status code {resp.status_code}"
+            fallback_msg = f"Error code: {resp.status_code}"
     except Exception as e:
         fallback_msg = str(e)
 
