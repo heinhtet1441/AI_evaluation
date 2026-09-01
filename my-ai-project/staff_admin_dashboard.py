@@ -57,11 +57,32 @@ with tab_train_brain:
                         {"idea_text": str(r["idea_text"]), "human_score": float(r["human_score"])}
                         for _, r in train_df.iterrows()
                     ]
-                    resp = requests.post(f"{API_URL}/bulk-feedback", json={"rows": rows}, timeout=120)
-                    if resp.status_code == 200:
-                        st.success(f"Successfully added {resp.json().get('added', len(rows))} samples to Database!")
-                    else:
-                        st.error(f"Failed to import CSV: {resp.text}")
+                    
+                    # Batch processing to prevent 502 Bad Gateway / Request Timeout on large datasets
+                    batch_size = 1000
+                    total_added = 0
+                    total_rows = len(rows)
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+
+                    for i in range(0, total_rows, batch_size):
+                        batch = rows[i:i + batch_size]
+                        try:
+                            resp = requests.post(f"{API_URL}/bulk-feedback", json={"rows": batch}, timeout=60)
+                            if resp.status_code == 200:
+                                total_added += resp.json().get("added", len(batch))
+                                progress = min(1.0, (i + len(batch)) / total_rows)
+                                progress_bar.progress(progress)
+                                status_text.text(f"Ingested {min(i + batch_size, total_rows)} of {total_rows} rows...")
+                            else:
+                                st.error(f"Failed at batch {i}: {resp.text}")
+                                break
+                        except Exception as batch_err:
+                            st.error(f"Network error at batch {i}: {batch_err}")
+                            break
+
+                    if total_added > 0:
+                        st.success(f"Successfully added {total_added} samples to Database!")
             else:
                 st.error("CSV file must contain `idea_text` and `human_score` columns.")
         except Exception as e:
