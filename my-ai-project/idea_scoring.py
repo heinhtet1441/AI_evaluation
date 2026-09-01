@@ -15,7 +15,7 @@ IDEA_MODEL_ROOT = "idea_model_artifacts"
 
 # Dynamic Base URL resolution
 def _get_ollama_base_url() -> str:
-    url = os.environ.get("OLLAMA_BASE_URL", "https://dexterous-nanny-amniotic.ngrok-free.dev").rstrip("/")
+    url = os.environ.get("OLLAMA_BASE_URL", "https://boost-front-generous-johns.trycloudflare.com").rstrip("/")
     return url
 
 def clean_and_normalize_text(raw_text: str) -> str:
@@ -174,10 +174,7 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
     if clean_base_url.endswith("/v1"):
         clean_base_url = clean_base_url[:-3].rstrip("/")
 
-    # Strict Ngrok Bypass Headers to block 403 HTML Interstitial pages
     headers = {
-        "ngrok-skip-browser-warning": "true",
-        "bypass-tunnel-reminder": "true",
         "User-Agent": "FastAPI-Backend-Engine/1.0",
         "Content-Type": "application/json"
     }
