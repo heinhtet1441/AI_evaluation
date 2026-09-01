@@ -8,6 +8,7 @@ import pandas as pd
 DB_ENGINE = os.environ.get("DB_ENGINE", "sqlite").lower()
 DB_PATH = os.environ.get("IDEA_DB_PATH", "idea_evaluation.db")
 DATABASE_URL = os.environ.get("DATABASE_URL", None)
+FEEDBACK_FILE = "feedback_store.json"
 
 @contextmanager
 def _connect():
@@ -161,4 +162,49 @@ def get_feedback_count() -> int:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) AS n FROM idea_feedback")
         row = cursor.fetchone()
-    return row["n"]
+    return row["n"] if row else 0
+
+# --- Bulk Feedback & JSON Fallback Extensions for Admin API ---
+
+def get_total_feedback_count() -> int:
+    db_count = get_feedback_count()
+    json_count = 0
+    if os.path.exists(FEEDBACK_FILE):
+        try:
+            with open(FEEDBACK_FILE, "r") as f:
+                data = json.load(f)
+                json_count = len(data)
+        except Exception:
+            json_count = 0
+    return max(db_count, json_count)
+
+def get_latest_metrics() -> dict:
+    return {"status": "active", "total_records": get_total_feedback_count()}
+
+def save_bulk_feedback(rows: list) -> int:
+    # 1. Save to Active DB Engine (PostgreSQL / SQLite)
+    now_str = datetime.now().isoformat()
+    with _connect() as conn:
+        cursor = conn.cursor()
+        for r in rows:
+            idea_text = r.get("idea_text", "")
+            human_score = float(r.get("human_score", 0.0))
+            query = "INSERT INTO idea_feedback (idea_text, human_score, submitted_at) VALUES (?, ?, ?)"
+            if DB_ENGINE == "postgres":
+                query = query.replace("?", "%s")
+            cursor.execute(query, (idea_text, human_score, now_str))
+
+    # 2. Sync to JSON File Fallback
+    existing = []
+    if os.path.exists(FEEDBACK_FILE):
+        try:
+            with open(FEEDBACK_FILE, "r") as f:
+                existing = json.load(f)
+        except Exception:
+            existing = []
+
+    existing.extend(rows)
+    with open(FEEDBACK_FILE, "w") as f:
+        json.dump(existing, f, indent=2)
+
+    return len(rows)
