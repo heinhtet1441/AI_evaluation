@@ -5,7 +5,7 @@ from pydantic import BaseModel
 import uvicorn
 
 # Import internal modules
-from idea_scoring import score_idea
+from idea_scoring import score_idea, reload_learned_brain
 import data_store
 
 app = FastAPI(title="AI Evaluation Engine API")
@@ -86,6 +86,21 @@ def bulk_feedback_endpoint(payload: BulkFeedbackPayload):
             [r.model_dump() for r in payload.rows]
         )
         return {"status": "success", "added": added}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/retrain")
+def retrain_endpoint():
+    try:
+        # Model ရဲ့ memory/brain ကို hot-reload လုပ်ပြီး ပြန်လည်စတင်ခြင်း
+        reload_learned_brain()
+        total_records = data_store.get_total_feedback_count()
+        return {
+            "status": "success",
+            "message": "AI Model Retrained and Hot-Reloaded successfully!",
+            "total_records_used": total_records
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
