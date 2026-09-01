@@ -170,15 +170,14 @@ Idea Text:
 def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3", org_context: str = None, ollama_base_url: str = None) -> dict:
     prompt = _build_rubric_prompt(idea_text, org_context)
     
-    # Strip any trailing slashes and /v1 prefixes to prevent double /v1 path issues (Fixes 404 Error)
     clean_base_url = (ollama_base_url or _get_ollama_base_url()).rstrip("/")
     if clean_base_url.endswith("/v1"):
         clean_base_url = clean_base_url[:-3].rstrip("/")
 
+    # Strict Ngrok Bypass Headers to block 403 HTML Interstitial pages
     headers = {
+        "ngrok-skip-browser-warning": "true",
         "bypass-tunnel-reminder": "true",
-        "Bypass-Tunnel-Remainder": "true",
-        "Ngrok-Skip-Browser-Warning": "true",
         "User-Agent": "FastAPI-Backend-Engine/1.0",
         "Content-Type": "application/json"
     }
@@ -201,8 +200,10 @@ def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3",
                 if key not in rubric or not isinstance(rubric[key], dict) or "score" not in rubric[key]:
                     rubric[key] = {"score": 7.0, "justification": "Evaluated neutrally by Local Ollama Engine."}
             return rubric
-    except Exception:
-        pass
+        else:
+            fallback_msg = f"API returned status code {resp.status_code}"
+    except Exception as e:
+        fallback_msg = str(e)
 
     # Attempt 2: OpenAI-compatible /v1/chat/completions endpoint
     chat_endpoint = f"{clean_base_url}/v1/chat/completions"
