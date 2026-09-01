@@ -10,17 +10,15 @@ import requests
 from bs4 import BeautifulSoup
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
-from openai import OpenAI
 
 IDEA_MODEL_ROOT = "idea_model_artifacts"
 
-# သင်ပေးပို့ထားသော Ngrok Tunnel URL ကို ချိတ်ဆက်ခြင်း
-NGROK_OLLAMA_URL = os.environ.get("OLLAMA_BASE_URL", "https://dexterous-nanny-amniotic.ngrok-free.dev/v1")
-
-ollama_client = OpenAI(
-    base_url=NGROK_OLLAMA_URL,
-    api_key="ollama"
-)
+# Dynamic Base URL resolution
+def _get_ollama_base_url() -> str:
+    url = os.environ.get("OLLAMA_BASE_URL", "https://dexterous-nanny-amniotic.ngrok-free.dev").rstrip("/")
+    if url.endswith("/v1"):
+        url = url[:-3]
+    return url
 
 def clean_and_normalize_text(raw_text: str) -> str:
     if not raw_text:
@@ -171,26 +169,41 @@ Idea Text:
 \"\"\"
 """
 
-def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3.1", org_context: str = None) -> dict:
+def llm_rubric_score(idea_text: str, api_key: str = None, model: str = "llama3", org_context: str = None, ollama_base_url: str = None) -> dict:
     prompt = _build_rubric_prompt(idea_text, org_context)
+    base_url = (ollama_base_url or _get_ollama_base_url()).rstrip("/")
+    endpoint = f"{base_url}/api/generate"
+
+    # Headers to bypass LocalTunnel and Ngrok warning pages (Fixes 403 Forbidden Error)
+    headers = {
+        "Bypass-Tunnel-Remainder": "true",
+        "Ngrok-Skip-Browser-Warning": "true",
+        "User-Agent": "Mozilla/5.0",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "format": "json"
+    }
+
     try:
-        response = ollama_client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "You are an AI evaluation engine. Output strictly valid JSON."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.0,
-            response_format={"type": "json_object"}
-        )
-        raw = response.choices[0].message.content
-        rubric = json.loads(raw)
-        for key in PILLAR_KEYS:
-            if key not in rubric or "score" not in rubric[key]:
-                rubric[key] = {"score": 7.0, "justification": "Evaluated neutrally by Local Ollama Engine."}
-        return rubric
+        resp = requests.post(endpoint, json=payload, headers=headers, timeout=60)
+        if resp.status_code == 200:
+            raw_response = resp.json().get("response", "{}")
+            rubric = json.loads(raw_response)
+            for key in PILLAR_KEYS:
+                if key not in rubric or not isinstance(rubric[key], dict) or "score" not in rubric[key]:
+                    rubric[key] = {"score": 7.0, "justification": "Evaluated neutrally by Local Ollama Engine."}
+            return rubric
+        else:
+            fallback_msg = f"API returned status code {resp.status_code}"
     except Exception as e:
-        return {k: {"score": 7.0, "justification": f"Evaluation fallback: {e}"} for k in PILLAR_KEYS}
+        fallback_msg = str(e)
+
+    return {k: {"score": 7.0, "justification": f"Evaluation fallback: {fallback_msg}"} for k in PILLAR_KEYS}
 
 def weighted_rubric_average(rubric: dict, weights: dict = None) -> float:
     weights = weights or {p["key"]: p["weight"] for p in PILLARS}
@@ -253,7 +266,8 @@ def learned_score(idea_text: str):
 def score_idea(text: str = None, file_bytes: bytes = None, filename: str = None,
                url: str = None, reference_corpus: list[str] = None,
                use_llm: bool = False, api_key: str = None,
-               org_context: str = None, pillar_weights: dict = None) -> dict:
+               org_context: str = None, pillar_weights: dict = None,
+               ollama_base_url: str = None, **kwargs) -> dict:
     idea_text = extract_text(text=text, file_bytes=file_bytes, filename=filename, url=url)
     if len(idea_text.split()) < 5:
         raise ValueError("Extracted text is too short to score.")
@@ -276,7 +290,7 @@ def score_idea(text: str = None, file_bytes: bytes = None, filename: str = None,
         weight_values.append((learned, 0.6))
 
     if use_llm:
-        rubric = llm_rubric_score(idea_text, api_key=api_key, org_context=org_context)
+        rubric = llm_rubric_score(idea_text, api_key=api_key, org_context=org_context, ollama_base_url=ollama_base_url)
         result["llm_rubric"] = rubric
         result["how_to_improve"] = generate_actionable_improvements(rubric)
         llm_avg = weighted_rubric_average(rubric, weights=pillar_weights)
